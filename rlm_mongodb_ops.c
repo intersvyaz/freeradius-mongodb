@@ -94,6 +94,16 @@ static int mongodb_ops_detach(void *instance);
 
 static void *mongodb_ops_thread_proc(void *arg);
 
+static void mongoc_log_handler(mongoc_log_level_t log_level,
+                               const char *log_domain,
+                               const char *message,
+                               void *user_data)
+{
+    (void) log_level;
+    (void) user_data;
+    radlog(L_INFO, "rlm_mongodb_ops: %s: %s", log_domain, message);
+}
+
 static int mongodb_ops_instantiate(CONF_SECTION *conf, void **instance)
 {
     rlm_mongodb_ops_t *inst;
@@ -132,6 +142,8 @@ static int mongodb_ops_instantiate(CONF_SECTION *conf, void **instance)
     mongoc_init();
     pthread_mutex_init(&inst->queue_lock, NULL);
     sem_init(&inst->queue_sem, 0, 0);
+
+    mongoc_log_set_handler(mongoc_log_handler, NULL);
 
     inst->pool = rad_malloc(sizeof(*inst->pool) * inst->cfg.pool_size);
     memset(inst->pool, 0, sizeof(*inst->pool) * inst->cfg.pool_size);
