@@ -113,7 +113,6 @@ static void *mod_conn_create(TALLOC_CTX *ctx, void *instance) {
  */
 static int mod_instantiate(CONF_SECTION *conf, void *instance) {
   rlm_mongodb_t *inst = instance;
-  bool ok = true;
 
   inst->name = cf_section_name2(conf);
   if (!inst->name) {
@@ -123,20 +122,32 @@ static int mod_instantiate(CONF_SECTION *conf, void *instance) {
   if (!strcasecmp(inst->cfg.action, "get")) {
     inst->action = RLM_MONGODB_GET;
     cf_log_err_cs(conf, "action 'get' is not implemented");
-    ok = false;
+    goto err;
   } else if (!strcasecmp(inst->cfg.action, "set")) {
     inst->action = RLM_MONGODB_SET;
   } else {
     cf_log_err_cs(conf, "invalid 'action', use'get' or 'set'");
-    ok = false;
+    goto err;
   }
 
   if (inst->cfg.remove && inst->cfg.update_query) {
     cf_log_err_cs(conf, "'update_query' and 'remove' can't be used at the same time");
-    ok = false;
+    goto err;
   } else if (!inst->cfg.remove && !inst->cfg.update_query) {
     cf_log_err_cs(conf, "'update_query' or 'remove' must be set for 'set' action");
-    ok = false;
+    goto err;
+  }
+
+  if (!cf_pair_find(conf, "pool")) {
+    if (!inst->cfg.server) {
+      cf_log_err_cs(conf, "Invalid or missing 'server' option");
+      goto err;
+    }
+  } else {
+    if (inst->cfg.server) {
+      cf_log_err_cs(conf, "Can't use server option when foreign connection pool specified");
+      goto err;
+    }
   }
 
   mongoc_init();
@@ -144,10 +155,13 @@ static int mod_instantiate(CONF_SECTION *conf, void *instance) {
 
   inst->pool = fr_connection_pool_module_init(conf, inst, mod_conn_create, NULL, inst->name);
   if (!inst->pool) {
-    ok = false;
+    goto err;
   }
 
-  return ok ? 0 : -1;
+  return 0;
+
+  err:
+  return -1;
 }
 
 /**
@@ -169,7 +183,7 @@ static rlm_rcode_t mod_proc(void *instance, REQUEST *request) {
 
   if (inst->action == RLM_MONGODB_GET) {
     // TODO: implement me!
-    code = RLM_MODULE_NOOP;
+    code = RLM_MODULE_FAIL;
   } else {
     mongoc_collection_t *mongo_collection = NULL;
     char *db = NULL, *collection = NULL, *query = NULL, *sort = NULL, *update = NULL;
